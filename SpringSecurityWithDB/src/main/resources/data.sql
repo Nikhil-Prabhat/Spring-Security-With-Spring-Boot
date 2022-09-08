@@ -1,0 +1,1 @@
+insert into user_table(id,user_name,password) values(1,"Nikhil","1234");
