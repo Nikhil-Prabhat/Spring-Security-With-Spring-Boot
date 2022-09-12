@@ -1,0 +1,18 @@
+Steps :
+
+1. Go to Github and open the option Developer Settings.
+2. Create an OAuth application with respective details:
+    * ApplicationName : Name your application with the desired name
+    * Homepage URL    : http://localhost:8080/
+    * Authorization   : http://localhost:8080/login/oauth2/code/github
+    
+ 3. Create a client Secret Key and configure application.yml or application.properties in spring boot application
+ 
+ spring:
+  security:
+    oauth2:
+      client:
+        registration:
+           github:
+              client-id: a3244d29cb865c119f4a
+              client-secret: 1bf5ec360320bcfa3163c7394dd4a90efbbab4ca 
