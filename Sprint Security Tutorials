@@ -58,3 +58,5 @@ Flow :
 4. The print service will again interact with authorization server to get the access token.
 5. With the access token, the print service will try to access the resource from resource holder.
 6. The resource holder will share the resource on the basis of access token and as per it's authorization.
+
+Stateless REST API : Each request from a client to the server must contain all the information necessary for the server to fulfill that request. The server doesn't rely on any previous requests or sessions to process the current request.
