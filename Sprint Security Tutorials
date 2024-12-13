@@ -60,3 +60,60 @@ Flow :
 6. The resource holder will share the resource on the basis of access token and as per it's authorization.
 
 Stateless REST API : Each request from a client to the server must contain all the information necessary for the server to fulfill that request. The server doesn't rely on any previous requests or sessions to process the current request.
+
+Spring Security Filters
+Request -> SecurityContextPersistenceFilter
+         -> CsrfFilter
+         -> LogoutFilter
+         -> UsernamePasswordAuthenticationFilter
+         -> DefaultLoginPageGeneratingFilter
+         -> BasicAuthenticationFilter
+         -> BearerTokenAuthenticationFilter
+         -> RequestCacheAwareFilter
+         -> SecurityContextHolderAwareRequestFilter
+         -> AnonymousAuthenticationFilter
+         -> SessionManagementFilter
+         -> ExceptionTranslationFilter
+         -> FilterSecurityInterceptor
+         -> Application (Controller or Resource)
+
+1. SecurityContextPersistenceFilter
+	Purpose: Loads the SecurityContext (e.g., authentication details) for the current request.
+	Example: Retrieves a user's authentication state from the session.
+2. CsrfFilter
+	Purpose: Protects against Cross-Site Request Forgery (CSRF) attacks by validating CSRF tokens.
+	Example: Verifies that form submissions originate from the legitimate user.
+3. LogoutFilter
+	Purpose: Handles user logout by invalidating sessions, clearing cookies, and redirecting to a logout page.
+	Example: Clears security details when a user logs out.
+4. UsernamePasswordAuthenticationFilter
+	Purpose: Processes user login requests by validating username and password.
+	Example: Authenticates credentials sent in a login form.
+5. DefaultLoginPageGeneratingFilter
+	Purpose: Generates a default login page if no custom login page is configured.
+	Example: Automatically provides a login form for the application.
+6. BasicAuthenticationFilter
+	Purpose: Processes HTTP Basic Authentication headers for API requests.
+	Example: Validates the Authorization: Basic header sent by clients.
+7. BearerTokenAuthenticationFilter
+	Purpose: Processes Bearer tokens for API requests (used with OAuth2/JWT).
+	Example: Validates a JWT token in the Authorization: Bearer header.
+8. RequestCacheAwareFilter
+	Purpose: Manages cached requests during redirects (e.g., after login).
+	Example: Redirects the user back to their original request after successful login.
+9. SecurityContextHolderAwareRequestFilter
+	Purpose: Wraps the HttpServletRequest to provide security-specific methods.
+	Example: Makes the current user's details accessible via HttpServletRequest.
+10. AnonymousAuthenticationFilter
+	Purpose: Assigns anonymous authentication to unauthenticated users.
+	Example: Allows anonymous users to access publicly available endpoints.
+11. SessionManagementFilter
+	Purpose: Ensures proper session management (e.g., concurrency control, invalid sessions).
+	Example: Prevents multiple concurrent logins for the same user.
+12. ExceptionTranslationFilter
+	Purpose: Handles exceptions thrown during security checks, such as authentication or access denial.
+	Example: Redirects unauthenticated users to a login page or returns a 401 Unauthorized error.
+13. FilterSecurityInterceptor
+	Purpose: The last filter in the chain; performs access control checks based on the security configuration.
+	Example: Checks if a user has the required role to access a specific URL.
+
