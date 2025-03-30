@@ -1,0 +1,230 @@
+// Filter Configuration
+// Unpublished Work © 2023-2024 Deere & Company.
+
+package com.deere.isg.opevents.core.config;
+
+import com.deere.isg.opevents.core.Constants;
+import com.deere.isg.opevents.core.dto.JwtDecoderDTO;
+import com.deere.isg.opevents.core.filter.MDCFilter;
+import com.deere.isg.opevents.core.filter.ResponseTimeLoggingFilter;
+import com.deere.isg.soup.oauth2.jakarta.OAuth2Filter;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.util.List;
+
+import static com.deere.isg.opevents.core.Constants.*;
+
+@Configuration
+@RequiredArgsConstructor
+public class FiltersConfigModule {
+
+    public static final String OAUTH_FILTER = "OAuthFilter";
+    public static final String OAUTH_FILTER_INTERNAL = "OAuthFilterInternal";
+    private final AutowireCapableBeanFactory beanFactory;
+    private final JwtDecoderDTO jwtDecoderDTO;
+
+    @Bean
+    @Qualifier("deleter")
+    public OAuth2Filter oAuth2DeleterFilterBean() {
+        OAuth2Filter oAuth2Filter = new OAuth2Filter(jwtDecoderDTO.getInternalAuthServer());
+        oAuth2Filter.setExpectedScopes(List.of(OPEVENTS_ORG_DELETER_SCOPE));
+        return oAuth2Filter;
+    }
+
+    @Bean
+    public FilterRegistrationBean<OAuth2Filter> oauth2DeleterFilter(@Qualifier("deleter") OAuth2Filter oAuth2FilterBean) {
+        FilterRegistrationBean<OAuth2Filter> registration = new FilterRegistrationBean<>();
+        registration.setFilter(oAuth2FilterBean);
+        registration.setName(OAUTH_FILTER);
+        registration.addUrlPatterns(BALE_DOC_ORG_DATA_DELETION_REQUESTS, OPEVENTS_ORG_DATA_DELETION_REQUESTS, HID_DATA_DELETION_REQUESTS);
+        registration.setOrder(3);
+        return registration;
+    }
+
+    @Bean()
+    @Qualifier("internal")
+    public OAuth2Filter oAuth2InternalFilterBean() {
+        OAuth2Filter oAuth2Filter = new OAuth2Filter(jwtDecoderDTO.getInternalAuthServer());
+        oAuth2Filter.setExpectedScopes(List.of(OPEVENTS_INTERNAL_SCOPE));
+        return oAuth2Filter;
+    }
+
+    @Bean
+    public FilterRegistrationBean<OAuth2Filter> oauth2InternalFilter(@Qualifier("internal") OAuth2Filter oAuth2FilterBean) {
+        FilterRegistrationBean<OAuth2Filter> registration = new FilterRegistrationBean<>();
+        registration.setFilter(oAuth2FilterBean);
+        registration.setName(OAUTH_FILTER_INTERNAL);
+        registration.addUrlPatterns(OPEVENTS_INTERNAL_REQUESTS, OPEVENTS_PERSISTER_INTERNAL_REQUESTS);
+        registration.setOrder(4);
+        return registration;
+    }
+
+    @Bean
+    public FilterRegistrationBean mdcFilter() {
+        FilterRegistrationBean<MDCFilter> registration = new FilterRegistrationBean<>();
+        MDCFilter mdcFilter = new MDCFilter();
+        beanFactory.autowireBean(mdcFilter);
+        registration.setFilter(mdcFilter);
+        registration.setOrder(1);
+        registration.addUrlPatterns(BALE_DOC_EVENTS_APIS, OPERATION_EVENTS_API_PATH, Constants.HEALTH_API, OPERATION_EVENTS_API_PATH_V2);
+        return registration;
+    }
+
+    @Bean
+    public FilterRegistrationBean responseTimeLoggingFilter() {
+        FilterRegistrationBean<ResponseTimeLoggingFilter> registration = new FilterRegistrationBean<>();
+        ResponseTimeLoggingFilter responseTimeLoggingFilter = new ResponseTimeLoggingFilter();
+        beanFactory.autowireBean(responseTimeLoggingFilter);
+        registration.setFilter(responseTimeLoggingFilter);
+        registration.setOrder(2);
+        registration.addUrlPatterns(BALE_DOC_EVENTS_APIS, OPERATION_EVENTS_API_PATH, Constants.HEALTH_API);
+        return registration;
+    }
+}
+
+// Filter Creation
+// Unpublished Work © 2023-2024 Deere & Company.
+
+package com.deere.isg.opevents.core.filter;
+
+import com.deere.isg.opevents.core.util.CachedBodyHttpServletRequest;
+import datadog.trace.api.GlobalTracer;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
+import org.springframework.util.StringUtils;
+import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.ContentCachingResponseWrapper;
+
+import java.io.IOException;
+import java.util.Collection;
+import java.util.function.Function;
+import java.util.regex.Matcher;
+
+import static com.deere.isg.opevents.core.Constants.*;
+import static java.util.Collections.list;
+import static org.hibernate.validator.internal.metadata.core.ConstraintHelper.PAYLOAD;
+
+@Slf4j
+@RequiredArgsConstructor
+public class MDCFilter extends OncePerRequestFilter {
+
+    @Override
+    public void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+        throws ServletException, IOException {
+
+        CachedBodyHttpServletRequest requestToUse = new CachedBodyHttpServletRequest(request);
+        ContentCachingResponseWrapper responseToUse = new ContentCachingResponseWrapper(response);
+        prepareMDC(requestToUse);
+        MDC.put(PAYLOAD, requestToUse.getBody());
+        MDC.put(HEADERS, headersToString(list(requestToUse.getHeaderNames()), requestToUse::getHeader));
+        MDC.put(QUERY_PARAMETERS, headersToString(list(requestToUse.getParameterNames()), requestToUse::getParameter));
+        filterChain.doFilter(requestToUse, responseToUse);
+        responseToUse.setHeader(REQUEST_ID, MDC.get(REQUEST_ID));
+        responseToUse.copyBodyToResponse();
+        MDC.clear();
+    }
+
+    private void prepareMDC(HttpServletRequest request) throws IOException {
+
+        MDC.put(REQUEST_ID, request.getHeader("x-request-id"));
+        MDC.put(DD_PARENT_TRACE_ID, request.getHeader("x-datadog-trace-id"));
+        MDC.put(DD_TRACE_ID, GlobalTracer.get().getTraceId());
+
+        MDC.put(HTTP_METHOD, request.getMethod());
+        MDC.put(REQUEST_URL, request.getRequestURI());
+        Matcher orgIdMatcher = ORG_ID_REGEX.matcher(request.getRequestURI());
+        if (orgIdMatcher.find()) {
+            MDC.put(ORG_ID, orgIdMatcher.group());
+        } else {
+            String orgIdFromRequestParameter = request.getParameter(ORG_ID);
+            if (StringUtils.hasText(orgIdFromRequestParameter)) {
+                MDC.put(ORG_ID, orgIdFromRequestParameter);
+            }
+        }
+    }
+
+    @Override
+    public void destroy() {
+        //do nothing
+    }
+
+    private String headersToString(Collection<String> headerNames, Function<String, String> headerValueResolver) {
+        StringBuilder builder = new StringBuilder();
+        for (String headerName : headerNames) {
+            if (!headerName.equalsIgnoreCase(AUTHORIZATION)) {
+                String header = headerValueResolver.apply(headerName);
+                builder.append(String.format("%s=%s", headerName, header)).append("\n");
+            }
+        }
+        return builder.toString();
+    }
+
+}
+
+// Filter Creation
+// Unpublished Work © 2023-2024 Deere & Company.
+
+package com.deere.isg.opevents.core.filter;
+
+import com.deere.axiom.core.exception.rest.InternalServerErrorException;
+import com.deere.isg.opevents.core.util.Profiler;
+import jakarta.servlet.*;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
+
+import java.io.IOException;
+
+import static com.deere.isg.opevents.core.Constants.*;
+
+@Slf4j
+public class ResponseTimeLoggingFilter implements Filter, Profiler {
+    @Override
+    public void init(FilterConfig filterConfig) {
+        //do nothing
+    }
+
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) {
+        Long responseTime = profileFilterChain(request, response, chain);
+        int status = getHttpStatus(((HttpServletResponse) response));
+        MDC.put(HTTP_STATUS, String.valueOf(status));
+        MDC.put(RESPONSE_TIME, responseTime.toString());
+        logProfileMessage();
+    }
+
+    private Long profileFilterChain(ServletRequest request, ServletResponse response, FilterChain chain) {
+        return profile(() -> {
+            try {
+                chain.doFilter(request, response);
+            } catch (IOException | ServletException e) {
+                log.error("RequestId : {} - Exception while processing the request - {}",
+                    MDC.get(REQUEST_ID), e.getMessage());
+                throw new InternalServerErrorException(e.getMessage(), e.getCause());
+            }
+        });
+    }
+
+    private void logProfileMessage() {
+        log.info("REQUEST STATISTICS");
+    }
+
+    private int getHttpStatus(HttpServletResponse response) {
+        return response.getStatus();
+    }
+
+    @Override
+    public void destroy() {
+        //do nothing
+    }
+}
